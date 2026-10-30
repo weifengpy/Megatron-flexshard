@@ -467,6 +467,25 @@ class FlexShardDataParallel(_BaseDataParallel):
         for fqns in self._main_grad_bucket_fqns:
             self._alias_main_grads([(fqn, self.module.get_parameter(fqn)) for fqn in fqns])
 
+    def record_cuda_graph_grads(self) -> None:
+        """After a full-iteration CUDA graph's capture, remember the gradient tensors the capture
+        gave the local shards. Each replay writes the step's reduced gradients into them, but the
+        optimizer drops param.grad once it has read it, so restore_cuda_graph_grads re-attaches
+        them after each replay, as torchtitan's CUDA-graph wrapper does. (Megatron DDP's gradients
+        live in persistent buffers instead.)"""
+        self._cuda_graph_grads = [
+            (param, param.grad, vars(param).get("main_grad"))
+            for param in self.module.parameters()
+            if param.grad is not None
+        ]
+
+    def restore_cuda_graph_grads(self) -> None:
+        """After a replay of a full-iteration CUDA graph: re-attach the captured gradients."""
+        for param, grad, main_grad in self._cuda_graph_grads:
+            param.grad = grad
+            if main_grad is not None:
+                param.main_grad = main_grad
+
     def finish_layer_backward(self, layer: torch.nn.Module) -> None:
         """The EP overlap schedule's per-layer post-backward hook: the layer's backward,
         including its delayed weight gradients, is done, so finish its buckets, which
