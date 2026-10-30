@@ -138,6 +138,15 @@ class StaticBufferLoader:
         return StaticBufferLoader.static_buffers[stage][microbatch]
 
 
+def _flex_shard_chunks(model):
+    """The FlexShard model chunks, whose local shards' gradients a replay writes into tensors the
+    capture created (FlexShardDataParallel.record_cuda_graph_grads)."""
+    from megatron.core.distributed.flex_shard import FlexShardDataParallel
+
+    chunks = model if isinstance(model, list) else [model]
+    return [chunk for chunk in chunks if isinstance(chunk, FlexShardDataParallel)]
+
+
 class FullCudaGraphWrapper:
     """Wrapper class to enable FullIterationCUDAgraph."""
 
@@ -238,11 +247,15 @@ class FullCudaGraphWrapper:
                 )
             torch.cuda.synchronize()
             torch.distributed.barrier()
+            for model_chunk in _flex_shard_chunks(model):
+                model_chunk.record_cuda_graph_grads()
             logger.info(f'CUDA graph capture done for {training_str}!!!')
         if FullCudaGraphWrapper.cuda_graph[training_str] is None:
             FullCudaGraphWrapper.result[training_str] = self.forward_backward_func(*args, **kwargs)
         else:
             FullCudaGraphWrapper.cuda_graph[training_str].replay()
+            for model_chunk in _flex_shard_chunks(model):
+                model_chunk.restore_cuda_graph_grads()
         self.next_iter(training_str)
         return FullCudaGraphWrapper.result[training_str]
 

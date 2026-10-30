@@ -60,6 +60,7 @@ The DeepSeek-V3 model's Phase A setup, matched work included, with `--optimizer 
 - `--overlap-moe-expert-parallel-comm` without `--flex-shard-no-reshard-after-forward --flex-shard-no-sync --flex-shard-no-reshard-after-backward`;
 - `--delay-wgrad-compute` without gradient accumulation fusion, and `--overlap-dispatch-backward-with-experts-wgrad` with `--flex-shard-no-sync` but without fusion;
 - single grouped MoE weights or biases (`--moe-single-grouped-weight`, `--moe-single-grouped-bias`) with the TransformerEngine op fuser, with FP8 or FP4, or with delayed weight gradients but without fusion.
+- per-layer CUDA graphs (`--cuda-graph-impl local` or `transformer_engine`), which would run FlexShard's hooks inside each layer's capture. Full-iteration CUDA graphs (`--cuda-graph-impl full_iteration`) work: the graph captures FlexShard's collectives with the forward and backward, as torchtitan's CUDA-graph wrapper does, and after each replay the wrapper re-attaches the gradients the capture gave the local shards. On a 4-layer GPT over 8 GPUs, FlexShard with a full-iteration graph captured at iteration 2 matches Megatron DDP's loss and grad norm exactly at iterations 1 and 2 and its own eager run bit for bit over 10 iterations.
 
 ### Example
 

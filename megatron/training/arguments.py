@@ -1086,6 +1086,12 @@ def validate_args(args, defaults={}):
                 '--use-flex-shard with --overlap-moe-expert-parallel-comm needs '
                 '--flex-shard-no-reshard-after-forward --flex-shard-no-sync '
                 '--flex-shard-no-reshard-after-backward')
+        # A full-iteration CUDA graph captures FlexShard's collectives with the forward and
+        # backward, as torchtitan's CUDA-graph wrapper does. Per-layer graphs (local,
+        # transformer_engine) would run FlexShard's hooks inside each layer's capture, where its
+        # gathers wait on work outside the graph.
+        assert args.cuda_graph_impl in ('none', 'full_iteration'), \
+            '--use-flex-shard supports --cuda-graph-impl none or full_iteration'
         # Without fusion, TransformerEngine's backward_dw() assigns delayed weight gradients to
         # param.grad, which would overwrite the gradients FlexShard accumulates there without sync.
         assert not (
